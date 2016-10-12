@@ -32,9 +32,14 @@ int main(int argc, char *argv[]) {
 	srand(time(NULL));
 
 	start_time = clock();
-	end_time = (start_time +(CLOCKS_PER_SEC * 42)+1000000);
-	printf("starttime is: %ld\n", start_time/CLOCKS_PER_SEC);
-	printf("endtime is: %ld\n", end_time/CLOCKS_PER_SEC);
+	end_time = start_time +(CLOCKS_PER_SEC * 42);
+
+	// 1. start teller threads
+	// 2. get in loop that runs until day is over
+	// 3. wait between 1-4 min - then create a new cust
+	// 4. when a cust is a front of line, they release a mutex
+	// 5. teller threds then race to get that mutex
+	// 6. teller thread that successfully gets mutex sleeps for 30s to 6m
 
 	/*while(clock() < end_time)
 	cust_arrival_time = get_cust_arrival_time();
