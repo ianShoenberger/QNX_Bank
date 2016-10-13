@@ -3,6 +3,7 @@
 #include <time.h>
 
 #define QUEUE_LENGTH (10)
+#define BILLION  1000000000L;
 
 typedef struct{
 	int random_enter_queue;
@@ -26,14 +27,31 @@ int main(int argc, char *argv[]) {
 	int x = 0;
 	int cust_arrival_time = 0;
 	int cust_transaction_time = 0;
-	struct timespec timer;
+	struct timespec timer, timer2;
 	clock_t start_time;
-	long end_time;
+	clock_t end_time;
 	srand(time(NULL));
+	struct timespec start, stop;
+	double accum;
 
-	start_time = clock();
-	end_time = start_time +(CLOCKS_PER_SEC * 42);
+	// save time into start struct
+	clock_gettime( CLOCK_REALTIME, &start);
 
+	timer.tv_sec = 8;
+	timer.tv_nsec = 5*100000000L;
+	nanosleep(&timer, NULL);
+
+	// save time into end struct
+	clock_gettime( CLOCK_REALTIME, &stop);
+
+	accum = ( stop.tv_sec - start.tv_sec )
+			 + (double)( stop.tv_nsec - start.tv_nsec )
+			   / (double)BILLION;
+	printf( "%lf\n", accum );
+
+	//  42s of abs clock time = 7hrs of simulated time
+	// since, we scale 60s to 0.1s, 1hr would therefore be 6s
+	// and 7hrs would then be 42s
 	// 1. start teller threads
 	// 2. get in loop that runs until day is over
 	// 3. wait between 1-4 min - then create a new cust
@@ -63,22 +81,22 @@ int main(int argc, char *argv[]) {
 
 int get_cust_arrival_time()
 {
-	return (rand() % 300)+100;
+	return (rand() % 3000)+1000;
 }
 
 int get_cust_transaction_time()
 {
-	return (rand() % 550)+50;
+	return (rand() % 5500)+500;
 }
 
 struct timespec get_time_spec(int time)
 {
 	struct timespec tim;
 	long temp;
-	tim.tv_sec = time/100;
-	temp = time % 100;
-	// this is 10 to 10th -- because our random # is 10^-2
-	tim.tv_nsec = temp * 10000000000;
+	tim.tv_sec = time/1000;
+	temp = time % 1000;
+	tim.tv_nsec = temp * BILLION;
+	return tim;
 }
 
 customer create_cust()
