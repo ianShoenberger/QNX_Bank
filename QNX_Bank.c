@@ -1,107 +1,119 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
+#include <pthread.h>
 
-#define QUEUE_LENGTH (10)
+#define QUEUE_LENGTH (20)
 #define BILLION  1000000000L;
+#define WORK_DAY_LENGTH (42)
 
 typedef struct{
 	int random_enter_queue;
 	float time_teller_start;
 	float time_teller_stop;
 	int random_trans_length;
-} customer;
+} Customer;
 
-int time_up = 0;
+// global variables
+int front_of_line_index = 0;
+int back_of_line_index = 0;
+Customer bank_line[QUEUE_LENGTH];
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+int num_customer_serviced = 0;
 
-//func prototypes
-customer create_cust(void);
-void teller_1(void);
+// function prototypes
+Customer create_customer(void);
+void* teller(void* arg);
 int get_cust_arrival_time(void);
 int get_cust_transaction_time(void);
-struct timespec get_time_spec(int time);
+void set_timespec(int time, struct timespec* period);
+double get_period(struct timespec* tim1, struct timespec* tim2);
+
+void* teller(void* rand_seed)
+{
+	srand(rand_seed);
+	struct timespec random_process_time;
+	while(1)
+	{
+		if(front_of_line_index != back_of_line_index) {
+			pthread_mutex_lock(&mutex);
+			front_of_line_index = (front_of_line_index + 1)%QUEUE_LENGTH;
+			num_customer_serviced++;
+			pthread_mutex_unlock(&mutex);
+
+			// "process" the customer, i.e. take time
+			set_timespec(get_cust_transaction_time(), &random_process_time);
+			nanosleep(&random_process_time, NULL);
+		}
+
+	}
+}
 
 int main(int argc, char *argv[]) {
-	customer cust;
-	customer cust_line[QUEUE_LENGTH];
-	int x = 0;
-	int cust_arrival_time = 0;
-	int cust_transaction_time = 0;
-	struct timespec timer, timer2;
-	clock_t start_time;
-	clock_t end_time;
+	struct timespec start_time, curr_time, random_arrival_time;
+	double accum_work_time;
+	int temp_rand = 0;
+
+	// we seed the random num generator
 	srand(time(NULL));
-	struct timespec start, stop;
-	double accum;
 
 	// save time into start struct
-	clock_gettime( CLOCK_REALTIME, &start);
+	clock_gettime(CLOCK_REALTIME, &start_time);
+	clock_gettime(CLOCK_REALTIME, &curr_time);
+	accum_work_time = get_period(&start_time, &curr_time);
 
-	timer.tv_sec = 8;
-	timer.tv_nsec = 5*100000000L;
-	nanosleep(&timer, NULL);
+	temp_rand = rand();
+	pthread_create(NULL, NULL, &teller, &temp_rand);
+	temp_rand = rand();
+	pthread_create(NULL, NULL, &teller, &temp_rand);
+	temp_rand = rand();
+	pthread_create(NULL, NULL, &teller, &temp_rand);
 
-	// save time into end struct
-	clock_gettime( CLOCK_REALTIME, &stop);
-
-	accum = ( stop.tv_sec - start.tv_sec )
-			 + (double)( stop.tv_nsec - start.tv_nsec )
-			   / (double)BILLION;
-	printf( "%lf\n", accum );
-
-	//  42s of abs clock time = 7hrs of simulated time
-	// since, we scale 60s to 0.1s, 1hr would therefore be 6s
-	// and 7hrs would then be 42s
-	// 1. start teller threads
-	// 2. get in loop that runs until day is over
-	// 3. wait between 1-4 min - then create a new cust
-	// 4. when a cust is a front of line, they release a mutex
-	// 5. teller threds then race to get that mutex
-	// 6. teller thread that successfully gets mutex sleeps for 30s to 6m
-
-	/*while(clock() < end_time)
-	cust_arrival_time = get_cust_arrival_time();
-	timer = get_time_spec(cust_arrival_time);
-	nanosleep(timer);
-	cust_line[x] =
-
-	cust_arrival_time = get_cust_arrival_time();*/
-
-	/*while(x < QUEUE_LENGTH)
+	while(accum_work_time < WORK_DAY_LENGTH)
 	{
-		printf("arrival is: %d\n", cust_line[x].random_enter_queue);
-		printf("arrival is: %d\n", cust_line[x].random_trans_length);
-		x++;
-	}*/
+		set_timespec(get_cust_arrival_time(), &random_arrival_time);
+		nanosleep(&random_arrival_time, NULL);
+		bank_line[front_of_line_index % QUEUE_LENGTH] = create_customer();
+		back_of_line_index = (back_of_line_index + 1)%QUEUE_LENGTH;
+		clock_gettime(CLOCK_REALTIME, &curr_time);
+		accum_work_time = get_period(&start_time, &curr_time);
+	}
 
-
-
+	printf("length of work-day:\t\t%lf\n", accum_work_time);
+	printf("number of customers serviced:\t\t%d\n", num_customer_serviced);
 	return EXIT_SUCCESS;
 }
 
-int get_cust_arrival_time()
+int get_cust_arrival_time(void)
 {
-	return (rand() % 3000)+1000;
+	return (rand() % 300)+100;
 }
 
-int get_cust_transaction_time()
+int get_cust_transaction_time(void)
 {
-	return (rand() % 5500)+500;
+	return (rand() % 550)+50;
 }
 
-struct timespec get_time_spec(int time)
+void set_timespec(int time, struct timespec* period)
 {
-	struct timespec tim;
-	long temp;
-	tim.tv_sec = time/1000;
-	temp = time % 1000;
-	tim.tv_nsec = temp * BILLION;
-	return tim;
+	// since 1 sec of real time is equal to 10 min
+	// and we have no need to set anything greater than 6 min, we are
+	// only setting the nsec property
+	period->tv_sec = 0;
+	period->tv_nsec = time * 1000000;
 }
 
-customer create_cust()
+double get_period(struct timespec* tim1, struct timespec* tim2) {
+	double period;
+	period = ( tim2->tv_sec - tim1->tv_sec )
+		+ (double)( tim2->tv_nsec - tim1->tv_nsec )
+		/ (double)BILLION;
+	return period;
+}
+
+Customer create_customer(void)
 {
-	customer new_cust;
+	Customer new_cust;
 	new_cust.random_enter_queue = get_cust_arrival_time();
 	new_cust.time_teller_start = 0.0;
 	new_cust.time_teller_stop = 0.0;
