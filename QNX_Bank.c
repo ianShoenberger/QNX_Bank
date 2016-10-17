@@ -8,36 +8,51 @@
 #define WORK_DAY_LENGTH (42)
 
 typedef struct{
-	int random_enter_queue;
-	float time_teller_start;
-	float time_teller_stop;
-	int random_trans_length;
+	struct timespec time_entered_line;
+	int id;
 } Customer;
 
+typedef struct{
+	int break_duration;
+	int next_break_time;
+	unsigned int rand_seed;
+} Teller;
+
 // global variables
-int front_of_line_index = 0;
 int back_of_line_index = 0;
 Customer bank_line[QUEUE_LENGTH];
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 int num_customer_serviced = 0;
+double total_cust_queue_time = 0;
+
+int test = 0;
 
 // function prototypes
 Customer create_customer(void);
+Teller create_teller(void);
 void* teller(void* arg);
 int get_cust_arrival_time(void);
 int get_cust_transaction_time(void);
 void set_timespec(int time, struct timespec* period);
 double get_period(struct timespec* tim1, struct timespec* tim2);
 
-void* teller(void* rand_seed)
+void* teller(void* arg)
 {
-	srand(rand_seed);
-	struct timespec random_process_time;
+	Teller *teller = (Teller *)arg;
+	srand(teller->rand_seed);
+	struct timespec random_process_time, now;
+	int front_of_line = 0;
+
 	while(1)
 	{
-		if(front_of_line_index != back_of_line_index) {
-			pthread_mutex_lock(&mutex);
-			front_of_line_index = (front_of_line_index + 1)%QUEUE_LENGTH;
+		pthread_mutex_lock(&mutex);
+		if(num_customer_serviced < back_of_line_index) {
+
+			front_of_line = num_customer_serviced%QUEUE_LENGTH;
+			clock_gettime(CLOCK_MONOTONIC, &now);
+
+			total_cust_queue_time += get_period(&bank_line[front_of_line].time_entered_line, &now);
+			//printf("%d teller -- %ld\n", bank_line[front_of_line].id, bank_line[front_of_line].time_entered_line.tv_sec);
 			num_customer_serviced++;
 			pthread_mutex_unlock(&mutex);
 
@@ -45,42 +60,47 @@ void* teller(void* rand_seed)
 			set_timespec(get_cust_transaction_time(), &random_process_time);
 			nanosleep(&random_process_time, NULL);
 		}
+		else {
+			pthread_mutex_unlock(&mutex);
+		}
 
 	}
 }
 
 int main(int argc, char *argv[]) {
 	struct timespec start_time, curr_time, random_arrival_time;
+	Teller teller1, teller2, teller3;
 	double accum_work_time;
-	int temp_rand = 0;
 
 	// we seed the random num generator
 	srand(time(NULL));
 
 	// save time into start struct
-	clock_gettime(CLOCK_REALTIME, &start_time);
-	clock_gettime(CLOCK_REALTIME, &curr_time);
+	clock_gettime(CLOCK_MONOTONIC, &start_time);
+	clock_gettime(CLOCK_MONOTONIC, &curr_time);
 	accum_work_time = get_period(&start_time, &curr_time);
 
-	temp_rand = rand();
-	pthread_create(NULL, NULL, &teller, &temp_rand);
-	temp_rand = rand();
-	pthread_create(NULL, NULL, &teller, &temp_rand);
-	temp_rand = rand();
-	pthread_create(NULL, NULL, &teller, &temp_rand);
+	teller1 = create_teller();
+	pthread_create(NULL, NULL, &teller, (void *)&teller1);
+	teller2 = create_teller();
+	pthread_create(NULL, NULL, &teller, (void *)&teller2);
+	teller3 = create_teller();
+	pthread_create(NULL, NULL, &teller, (void *)&teller3);
 
 	while(accum_work_time < WORK_DAY_LENGTH)
 	{
 		set_timespec(get_cust_arrival_time(), &random_arrival_time);
 		nanosleep(&random_arrival_time, NULL);
-		bank_line[front_of_line_index % QUEUE_LENGTH] = create_customer();
-		back_of_line_index = (back_of_line_index + 1)%QUEUE_LENGTH;
-		clock_gettime(CLOCK_REALTIME, &curr_time);
+		bank_line[back_of_line_index % QUEUE_LENGTH] = create_customer();
+		back_of_line_index++;
+		clock_gettime(CLOCK_MONOTONIC, &curr_time);
 		accum_work_time = get_period(&start_time, &curr_time);
 	}
 
-	printf("length of work-day:\t\t%lf\n", accum_work_time);
+	printf("total customer queue time: %lf\n", total_cust_queue_time);
+	printf("Average time each customer is in line:\t\t%lf\n", total_cust_queue_time/(float)num_customer_serviced);
 	printf("number of customers serviced:\t\t%d\n", num_customer_serviced);
+	printf("length of day: \t\t%lf\n", accum_work_time);
 	return EXIT_SUCCESS;
 }
 
@@ -104,7 +124,8 @@ void set_timespec(int time, struct timespec* period)
 }
 
 double get_period(struct timespec* tim1, struct timespec* tim2) {
-	double period;
+	double period = 0;
+
 	period = ( tim2->tv_sec - tim1->tv_sec )
 		+ (double)( tim2->tv_nsec - tim1->tv_nsec )
 		/ (double)BILLION;
@@ -114,10 +135,19 @@ double get_period(struct timespec* tim1, struct timespec* tim2) {
 Customer create_customer(void)
 {
 	Customer new_cust;
-	new_cust.random_enter_queue = get_cust_arrival_time();
-	new_cust.time_teller_start = 0.0;
-	new_cust.time_teller_stop = 0.0;
-	new_cust.random_trans_length = get_cust_transaction_time();
+	clock_gettime(CLOCK_MONOTONIC, &new_cust.time_entered_line);
+	//printf("%d -- %ld\n", test, new_cust.time_entered_line.tv_sec);
+	new_cust.id = test++;
 
 	return new_cust;
+}
+
+Teller create_teller(void)
+{
+	Teller new_teller;
+	new_teller.rand_seed = rand();
+	new_teller.break_duration = 0;
+	new_teller.next_break_time = 0;
+
+	return new_teller;
 }
